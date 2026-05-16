@@ -1,13 +1,14 @@
 name: CD
 
 # Promotion flow:
-#   feature/* ──PR──► main ──auto──► staging
-#                       └──merge──► production ──approval──► production
+#   feature/* ──PR──► main ──auto──► staging env
+#   hotfix/*  ──PR──► prod ──approval──► production env
+#                └──auto backport PR──► main
 on:
   push:
     branches:
       - main
-      - production
+      - prod
 
 # Each environment gets its own concurrency group so a staging deploy never
 # blocks a production deploy and vice versa.
@@ -85,15 +86,16 @@ jobs:
               "${complete_to_confirmed}"
 
   # ── Production ──────────────────────────────────────────────────────────
-  # Runs on push to the production branch. The "production" GitHub environment
-  # must have required reviewers configured — that is the manual approval gate.
-  # Secrets are scoped to the "production" environment, completely isolated
-  # from staging secrets.
+  # Runs on push to the prod branch. The "production" GitHub environment must
+  # have required reviewers configured — that is the manual approval gate.
+  # Secrets are scoped to "production", completely isolated from staging.
   deploy-production:
     name: Deploy to production
-    if: github.ref == 'refs/heads/production'
+    if: github.ref == 'refs/heads/prod'
     runs-on: ubuntu-latest
     environment: production
+    permissions:
+      contents: write  # required to push release tags
 
     steps:
       - uses: actions/checkout@v4
@@ -153,3 +155,16 @@ jobs:
               "${commit_to_trigger}" \
               "${trigger_to_complete}" \
               "${complete_to_confirmed}"
+
+      # Tag every successful production deploy for rollback traceability (Rule 8).
+      # Format: release/YYYY-MM-DD-<short-sha>
+      - name: Tag release
+        if: success()
+        run: |
+          TAG="release/$(date -u +%Y-%m-%d)-${GITHUB_SHA::7}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "${TAG}" -m "Production release ${{ github.sha }}"
+          git push origin "${TAG}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
