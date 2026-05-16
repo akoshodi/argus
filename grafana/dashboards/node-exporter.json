@@ -1,0 +1,64 @@
+{
+  "uid": "node-exporter",
+  "title": "Node Exporter Dashboard",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "15s",
+  "time": { "from": "now-6h", "to": "now" },
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "CPU Usage %",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "100 - (avg by(instance) (irate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)", "refId": "A" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Per-Core CPU %",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "100 - (avg by(cpu) (irate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)", "refId": "A" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Memory Used/Cached/Available",
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes", "refId": "A", "legendFormat": "used" },
+        { "expr": "node_memory_Cached_bytes", "refId": "B", "legendFormat": "cached" },
+        { "expr": "node_memory_MemAvailable_bytes", "refId": "C", "legendFormat": "available" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Disk I/O",
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "rate(node_disk_read_bytes_total[5m])", "refId": "A", "legendFormat": "read" },
+        { "expr": "rate(node_disk_written_bytes_total[5m])", "refId": "B", "legendFormat": "write" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Network I/O",
+      "gridPos": { "x": 0, "y": 16, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "rate(node_network_receive_bytes_total[5m])", "refId": "A", "legendFormat": "rx" },
+        { "expr": "rate(node_network_transmit_bytes_total[5m])", "refId": "B", "legendFormat": "tx" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Load Average (1m/5m/15m)",
+      "gridPos": { "x": 12, "y": 16, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "node_load1", "refId": "A", "legendFormat": "1m" },
+        { "expr": "node_load5", "refId": "B", "legendFormat": "5m" },
+        { "expr": "node_load15", "refId": "C", "legendFormat": "15m" }
+      ]
+    }
+  ]
+}

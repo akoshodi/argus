@@ -1,0 +1,70 @@
+{
+  "uid": "slo-error-budget",
+  "title": "SLO & Error Budget Dashboard",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-30d", "to": "now" },
+  "panels": [
+    {
+      "type": "gauge",
+      "title": "Availability SLI (30d)",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 6 },
+      "targets": [
+        { "expr": "slo:availability:ratio_30d", "refId": "A" }
+      ]
+    },
+    {
+      "type": "gauge",
+      "title": "Availability SLO Target",
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 6 },
+      "targets": [
+        { "expr": "0.995", "refId": "A" }
+      ]
+    },
+    {
+      "type": "bargauge",
+      "title": "Error Budget Remaining (%)",
+      "gridPos": { "x": 12, "y": 0, "w": 8, "h": 6 },
+      "targets": [
+        { "expr": "slo:error_budget_remaining:availability * 100", "refId": "A" }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Error Budget Remaining (hours)",
+      "gridPos": { "x": 20, "y": 0, "w": 4, "h": 6 },
+      "targets": [
+        { "expr": "slo:error_budget_remaining:availability * (30 * 24 * 0.005)", "refId": "A" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Fast Burn Rate (1h)",
+      "gridPos": { "x": 0, "y": 6, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "slo:burnrate:error_1h", "refId": "A" },
+        { "expr": "14.4", "refId": "B", "legendFormat": "critical threshold" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Slow Burn Rate (6h)",
+      "gridPos": { "x": 12, "y": 6, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "slo:burnrate:error_6h", "refId": "A" },
+        { "expr": "5", "refId": "B", "legendFormat": "warning threshold" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "SLO Compliance History (7d and 30d)",
+      "gridPos": { "x": 0, "y": 14, "w": 24, "h": 8 },
+      "targets": [
+        { "expr": "avg_over_time(probe_success{job=\"blackbox_http\"}[7d])", "refId": "A", "legendFormat": "7d" },
+        { "expr": "avg_over_time(probe_success{job=\"blackbox_http\"}[30d])", "refId": "B", "legendFormat": "30d" },
+        { "expr": "0.995", "refId": "C", "legendFormat": "SLO" }
+      ]
+    }
+  ]
+}

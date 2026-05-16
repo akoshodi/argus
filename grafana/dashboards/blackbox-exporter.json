@@ -1,0 +1,44 @@
+{
+  "uid": "blackbox-exporter",
+  "title": "Blackbox Exporter Dashboard",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "15s",
+  "time": { "from": "now-24h", "to": "now" },
+  "panels": [
+    {
+      "type": "state-timeline",
+      "title": "Uptime/Downtime Timeline",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "probe_success{job=\"blackbox_http\"}", "refId": "A" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "HTTP Response Time Quantiles (s)",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "quantile_over_time(0.50, probe_duration_seconds{job=\"blackbox_http\"}[5m])", "refId": "A", "legendFormat": "p50" },
+        { "expr": "quantile_over_time(0.90, probe_duration_seconds{job=\"blackbox_http\"}[5m])", "refId": "B", "legendFormat": "p90" },
+        { "expr": "quantile_over_time(0.99, probe_duration_seconds{job=\"blackbox_http\"}[5m])", "refId": "C", "legendFormat": "p99" }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Probe Success Rate (24h)",
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 6 },
+      "targets": [
+        { "expr": "avg_over_time(probe_success{job=\"blackbox_http\"}[24h]) * 100", "refId": "A" }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "SSL Expiry Countdown (days)",
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 6 },
+      "targets": [
+        { "expr": "(probe_ssl_earliest_cert_expiry - time()) / 86400", "refId": "A" }
+      ]
+    }
+  ]
+}

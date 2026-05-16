@@ -1,0 +1,80 @@
+{
+  "uid": "dora-metrics",
+  "title": "DORA Metrics Dashboard",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-30d", "to": "now" },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Deployment Frequency (per day)",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 5 },
+      "targets": [
+        { "expr": "sum(increase(github_actions_workflow_runs_total{status=\"success\"}[1d]))", "refId": "A" }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "DORA Class",
+      "description": ">=1/day Elite, >=1/week High, >=1/month Medium, else Low",
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 5 },
+      "targets": [
+        { "expr": "sum(increase(github_actions_workflow_runs_total{status=\"success\"}[1d]))", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "range", "from": 1, "to": 999999, "text": "Elite" },
+            { "type": "range", "from": 0.1428, "to": 1, "text": "High" },
+            { "type": "range", "from": 0.0333, "to": 0.1428, "text": "Medium" },
+            { "type": "range", "from": 0, "to": 0.0333, "text": "Low" }
+          ]
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Lead Time for Changes Breakdown (minutes)",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "avg(dora_ltc_commit_to_trigger_seconds) / 60", "refId": "A", "legendFormat": "commit -> trigger" },
+        { "expr": "avg(dora_ltc_trigger_to_pipeline_complete_seconds) / 60", "refId": "B", "legendFormat": "trigger -> pipeline complete" },
+        { "expr": "avg(dora_ltc_pipeline_complete_to_deploy_confirmed_seconds) / 60", "refId": "C", "legendFormat": "pipeline complete -> deploy confirmed" },
+        { "expr": "avg(dora_ltc_total_seconds) / 60", "refId": "D", "legendFormat": "total" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Change Failure Rate (rolling 7d)",
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "sum(increase(github_actions_failed_workflow_runs_total[7d])) / sum(increase(github_actions_workflow_runs_total[7d]))", "refId": "A" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "MTTR (minutes)",
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "incident_mttr_minutes", "refId": "A" }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Manual Intervention Overhead (minutes)",
+      "gridPos": { "x": 0, "y": 16, "w": 12, "h": 6 },
+      "targets": [
+        { "expr": "avg(incident_manual_intervention_minutes)", "refId": "A" }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "MTTR 7d Avg (minutes)",
+      "gridPos": { "x": 12, "y": 16, "w": 12, "h": 6 },
+      "targets": [
+        { "expr": "avg_over_time(incident_mttr_minutes[7d])", "refId": "A" }
+      ]
+    }
+  ]
+}
