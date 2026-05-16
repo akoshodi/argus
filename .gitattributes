@@ -1,0 +1,30 @@
+# Enforce LF line endings for all text files so shell scripts run correctly
+# on Linux deployment targets regardless of developer OS.
+
+# Default: auto-detect text, normalise to LF in repo
+* text=auto eol=lf
+
+# Shell scripts must always be LF
+*.sh text eol=lf
+
+# Config / markup
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+*.toml text eol=lf
+*.md   text eol=lf
+*.tmpl text eol=lf
+*.tf   text eol=lf
+*.py   text eol=lf
+*.txt  text eol=lf
+*.prom text eol=lf
+
+Dockerfile text eol=lf
+.env.example text eol=lf
+
+# Binary — never diff or modify
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
