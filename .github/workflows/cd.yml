@@ -1,0 +1,84 @@
+name: CD
+
+on:
+  push:
+    branches:
+      - main
+
+# Prevent concurrent deployments; never cancel an in-flight deploy.
+concurrency:
+  group: cd-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy observability stack
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Capture timestamps used later to record LTC sub-intervals.
+      - name: Capture timing baseline
+        id: ts
+        run: |
+          echo "trigger_ts=$(date +%s)" >> "$GITHUB_OUTPUT"
+          echo "commit_ts=$(git log -1 --format=%ct HEAD)" >> "$GITHUB_OUTPUT"
+
+      # Pull latest code on the deployment host and apply Terraform.
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            cd "${{ secrets.DEPLOY_PATH }}"
+            git pull origin main
+            terraform -chdir=terraform init -input=false -upgrade
+            terraform -chdir=terraform apply -auto-approve \
+              -var="project_root=$(pwd)"
+
+      # Record when terraform apply returned so we can compute
+      # trigger_to_complete for LTC.
+      - name: Capture deploy-complete timestamp
+        id: deploy_ts
+        run: echo "deploy_complete_ts=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      # Poll Grafana health endpoint on the remote host to confirm the stack
+      # is serving before marking the deployment confirmed.
+      - name: Verify Grafana health
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            timeout 60 bash -c \
+              'until curl -sf http://localhost:3000/api/health; do sleep 5; done'
+
+      # Write LTC sub-interval metrics into the textfile collector so
+      # Node Exporter exposes them to Prometheus immediately.
+      - name: Record LTC sub-interval metrics
+        if: success()
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            cd "${{ secrets.DEPLOY_PATH }}"
+            now=$(date +%s)
+            commit_ts="${{ steps.ts.outputs.commit_ts }}"
+            trigger_ts="${{ steps.ts.outputs.trigger_ts }}"
+            deploy_complete_ts="${{ steps.deploy_ts.outputs.deploy_complete_ts }}"
+            commit_to_trigger=$(( trigger_ts - commit_ts ))
+            trigger_to_complete=$(( deploy_complete_ts - trigger_ts ))
+            complete_to_confirmed=$(( now - deploy_complete_ts ))
+            ./scripts/record_ltc.sh \
+              "${commit_to_trigger}" \
+              "${trigger_to_complete}" \
+              "${complete_to_confirmed}"
