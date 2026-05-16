@@ -123,24 +123,52 @@ Includes:
 
 ## GitHub Actions CI/CD
 
+### Branch Model
+
+```
+feature/* ──PR──► main ──auto──► staging
+                    └──merge──► production ──approval──► production
+```
+
+| Branch | Purpose |
+|---|---|
+| `feature/*` (any non-`main`/`production` branch) | Development — CI runs on push and on PRs to `main` or `production` |
+| `main` | Integration — merging here triggers an automatic deploy to **staging** |
+| `production` | Release — merging here queues a deploy to **production** pending manual approval |
+
+### Promotion Flow
+
+1. Open a PR from your feature branch to `main` → CI validates config and app.
+2. Merge to `main` → staging deploys automatically.
+3. Verify staging. When ready, merge `main` into `production`.
+4. The CD workflow queues a production deployment; a required reviewer (configured on the `production` GitHub environment) must approve before it runs.
+
 ### Workflows
 
 | Workflow | Trigger | Purpose |
 |---|---|---|
-| **CI** (`.github/workflows/ci.yml`) | Push to non-`main` branches; PRs to `main` | Validates Prometheus alert rules (`promtool`), Alertmanager config (`amtool`), builds sample-app Docker image and smoke-tests `/healthz` |
-| **CD** (`.github/workflows/cd.yml`) | Push to `main` | SSH-deploys the stack via Terraform, polls Grafana `/api/health` to confirm, then records LTC sub-interval metrics |
+| **CI** (`.github/workflows/ci.yml`) | Push to non-`main`/non-`production` branches; PRs to `main` or `production` | Validates Prometheus rules (`promtool`), Alertmanager config (`amtool`), builds sample-app and smoke-tests `/healthz` |
+| **CD — staging** (`.github/workflows/cd.yml`) | Push to `main` | SSH-deploys to staging, polls Grafana `/api/health`, records LTC metrics |
+| **CD — production** (`.github/workflows/cd.yml`) | Push to `production` + manual approval | SSH-deploys to production, polls Grafana `/api/health`, records LTC metrics |
 
-The CD workflow uses a `production` GitHub environment — configure required reviewers there to add a manual approval gate before deployments.
+### Environment Setup (GitHub)
 
-### Required GitHub Secrets
+Create two environments under **Settings → Environments**:
 
-Configure these under **Settings → Secrets and variables → Actions**:
+| Environment | Protection |
+|---|---|
+| `staging` | None — deploys automatically |
+| `production` | Add at least one required reviewer; optionally restrict to the `production` branch |
+
+### Required Secrets (per environment)
+
+Each environment holds its own copy of these four secrets, pointing to its own server. Configure them under **Settings → Environments → \<env\> → Secrets**:
 
 | Secret | Description |
 |---|---|
-| `DEPLOY_HOST` | IP or hostname of the deployment server |
+| `DEPLOY_HOST` | IP or hostname of the deployment server for this environment |
 | `DEPLOY_USER` | SSH username on the deployment server |
-| `DEPLOY_SSH_KEY` | SSH private key (the matching public key must be in `authorized_keys` on the server) |
+| `DEPLOY_SSH_KEY` | SSH private key (matching public key must be in `authorized_keys` on the server) |
 | `DEPLOY_PATH` | Absolute path to the repository clone on the deployment server |
 
 ## Alerting System
