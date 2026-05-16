@@ -1,0 +1,161 @@
+groups:
+  - name: infra-alerts
+    rules:
+      - alert: HostHighCpuWarning
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+          service: infrastructure
+          runbook: https://github.com/your-org/observabilityhng/blob/main/runbooks/cpu.md
+        annotations:
+          summary: "CPU usage warning on {{ $labels.instance }}"
+          description: "CPU is above 80% for more than 5m on {{ $labels.instance }}. Current={{ $value | printf \"%.1f\" }}%"
+          dashboard: "http://localhost:3000/d/node-exporter/node-exporter?var-instance={{ $labels.instance }}"
+
+      - alert: HostHighCpuCritical
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 90
+        for: 10m
+        labels:
+          severity: critical
+          service: infrastructure
+          runbook: https://github.com/your-org/observabilityhng/blob/main/runbooks/cpu.md
+        annotations:
+          summary: "CPU usage critical on {{ $labels.instance }}"
+          description: "CPU is above 90% for more than 10m on {{ $labels.instance }}. Current={{ $value | printf \"%.1f\" }}%"
+          dashboard: "http://localhost:3000/d/node-exporter/node-exporter?var-instance={{ $labels.instance }}"
+
+      - alert: HostMemoryWarning
+        expr: (1 - ((node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes))) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+          service: infrastructure
+          runbook: https://github.com/your-org/observabilityhng/blob/main/runbooks/memory.md
+        annotations:
+          summary: "Memory usage warning on {{ $labels.instance }}"
+          description: "Memory utilization is above 80% on {{ $labels.instance }}. Current={{ $value | printf \"%.1f\" }}%"
+          dashboard: "http://localhost:3000/d/node-exporter/node-exporter?var-instance={{ $labels.instance }}"
+
+      - alert: HostMemoryCritical
+        expr: (1 - ((node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes))) * 100 > 90
+        for: 10m
+        labels:
+          severity: critical
+          service: infrastructure
+          runbook: https://github.com/your-org/observabilityhng/blob/main/runbooks/memory.md
+        annotations:
+          summary: "Memory usage critical on {{ $labels.instance }}"
+          description: "Memory utilization is above 90% on {{ $labels.instance }}. Current={{ $value | printf \"%.1f\" }}%"
+          dashboard: "http://localhost:3000/d/node-exporter/node-exporter?var-instance={{ $labels.instance }}"
+
+      - alert: HostDiskWarning
+        expr: (1 - (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"})) * 100 > 75
+        for: 10m
+        labels:
+          severity: warning
+          service: infrastructure
+          runbook: https://github.com/your-org/observabilityhng/blob/main/runbooks/disk.md
+        annotations:
+          summary: "Disk usage warning on {{ $labels.instance }}"
+          description: "Disk utilization is above 75% on {{ $labels.instance }} ({{ $labels.mountpoint }}). Current={{ $value | printf \"%.1f\" }}%"
+          dashboard: "http://localhost:3000/d/node-exporter/node-exporter?var-instance={{ $labels.instance }}"
+
+      - alert: HostDiskCritical
+        expr: (1 - (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"})) * 100 > 90
+        for: 10m
+        labels:
+          severity: critical
+          service: infrastructure
+          runbook: https://github.com/your-org/observabilityhng/blob/main/runbooks/disk.md
+        annotations:
+          summary: "Disk usage critical on {{ $labels.instance }}"
+          description: "Disk utilization is above 90% on {{ $labels.instance }} ({{ $labels.mountpoint }}). Current={{ $value | printf \"%.1f\" }}%"
+          dashboard: "http://localhost:3000/d/node-exporter/node-exporter?var-instance={{ $labels.instance }}"
+
+      - alert: HostDown
+        expr: probe_success{job="blackbox_http"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: availability
+          runbook: https://github.com/your-org/observabilityhng/blob/main/runbooks/host-down.md
+        annotations:
+          summary: "HTTP probe failed for {{ $labels.instance }}"
+          description: "Endpoint {{ $labels.instance }} has been unreachable for at least 2 minutes"
+          dashboard: "http://localhost:3000/d/blackbox-exporter/blackbox-exporter?var-target={{ $labels.instance }}"
+
+  - name: slo-recording
+    rules:
+      - record: service:request_total:rate5m
+        expr: sum(rate(http_server_requests_total[5m]))
+
+      - record: service:request_error_rate5m
+        expr: sum(rate(http_server_requests_total{status=~"5.."}[5m])) / sum(rate(http_server_requests_total[5m]))
+
+      - record: service:request_latency_p95_5m
+        expr: histogram_quantile(0.95, sum(rate(http_server_request_duration_seconds_bucket[5m])) by (le))
+
+      - record: slo:availability:ratio_30d
+        expr: avg_over_time(probe_success{job="blackbox_http"}[30d])
+
+      - record: slo:error_budget_remaining:availability
+        expr: (0.995 - (1 - slo:availability:ratio_30d)) / 0.005
+
+      - record: slo:burnrate:error_1h
+        expr: (sum(rate(http_server_requests_total{status=~"5.."}[1h])) / sum(rate(http_server_requests_total[1h]))) / 0.01
+
+      - record: slo:burnrate:error_6h
+        expr: (sum(rate(http_server_requests_total{status=~"5.."}[6h])) / sum(rate(http_server_requests_total[6h]))) / 0.01
+
+  - name: slo-burnrate-alerts
+    rules:
+      - alert: SLOFastBurnRateCritical
+        expr: slo:burnrate:error_1h > 14.4
+        for: 5m
+        labels:
+          severity: critical
+          service: slo
+          runbook: https://github.com/your-org/observabilityhng/blob/main/runbooks/slo-fast-burn.md
+        annotations:
+          summary: "Fast burn-rate alert for error budget"
+          description: "1h burn rate is {{ $value | printf \"%.1f\" }}x (>14.4x). More than 2% of the 30d error budget consumed in 1h"
+          dashboard: "http://localhost:3000/d/slo-error-budget/slo-error-budget"
+
+      - alert: SLOSlowBurnRateWarning
+        expr: slo:burnrate:error_6h > 5
+        for: 15m
+        labels:
+          severity: warning
+          service: slo
+          runbook: https://github.com/your-org/observabilityhng/blob/main/runbooks/slo-slow-burn.md
+        annotations:
+          summary: "Slow burn-rate warning for error budget"
+          description: "6h burn rate is {{ $value | printf \"%.1f\" }}x (>5x). More than 5% of the 30d error budget consumed in 6h"
+          dashboard: "http://localhost:3000/d/slo-error-budget/slo-error-budget"
+
+  - name: dora-alerts
+    rules:
+      - alert: ChangeFailureRateHigh
+        expr: (sum(rate(github_actions_failed_workflow_runs_total[1d])) / sum(rate(github_actions_workflow_runs_total[1d]))) > 0.15
+        for: 10m
+        labels:
+          severity: warning
+          service: cicd
+          runbook: https://github.com/your-org/observabilityhng/blob/main/runbooks/cfr.md
+        annotations:
+          summary: "Change Failure Rate above SLO threshold"
+          description: "Rolling 1d CFR is {{ $value | humanizePercentage }} (threshold 15%)"
+          dashboard: "http://localhost:3000/d/dora-metrics/dora-metrics"
+
+      - alert: MTTRExceeded
+        expr: avg_over_time(incident_mttr_minutes[7d]) > 60
+        for: 15m
+        labels:
+          severity: warning
+          service: cicd
+          runbook: https://github.com/your-org/observabilityhng/blob/main/runbooks/mttr.md
+        annotations:
+          summary: "MTTR above target"
+          description: "7-day average MTTR is {{ $value | printf \"%.0f\" }}m (threshold 60m)"
+          dashboard: "http://localhost:3000/d/dora-metrics/dora-metrics"
