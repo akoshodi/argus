@@ -1,0 +1,148 @@
+name: Hotfix
+
+# Hotfix process (Rule 9):
+#   1. Branch from prod:  git checkout -b hotfix/<name> prod
+#   2. Push branch  →  this workflow runs CI checks.
+#   3. Open PR to prod  →  CI must pass; requires reviewer approval.
+#   4. Merge PR to prod  →  CD workflow deploys to production.
+#   5. This workflow automatically opens a backport PR to main so both
+#      long-lived branches stay in sync.
+
+on:
+  # Run CI on every push to a hotfix branch.
+  push:
+    branches:
+      - 'hotfix/**'
+
+  # After a hotfix PR is merged into prod, open the backport PR to dev.
+  pull_request:
+    types: [closed]
+    branches:
+      - prod
+
+jobs:
+  # ── CI checks (identical gates to the main CI workflow) ─────────────────
+  validate-prometheus:
+    name: Validate Prometheus rules
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install promtool
+        env:
+          VERSION: "2.53.1"
+        run: |
+          curl -sSL \
+            "https://github.com/prometheus/prometheus/releases/download/v${VERSION}/prometheus-${VERSION}.linux-amd64.tar.gz" \
+            | tar -xz --strip-components=1 -C /tmp \
+              "prometheus-${VERSION}.linux-amd64/promtool"
+          sudo mv /tmp/promtool /usr/local/bin/promtool
+
+      - name: Check alert rules
+        run: promtool check rules config/prometheus/alerts.yml
+
+  validate-alertmanager:
+    name: Validate Alertmanager config
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install amtool
+        env:
+          VERSION: "0.27.0"
+        run: |
+          curl -sSL \
+            "https://github.com/prometheus/alertmanager/releases/download/v${VERSION}/alertmanager-${VERSION}.linux-amd64.tar.gz" \
+            | tar -xz --strip-components=1 -C /tmp \
+              "alertmanager-${VERSION}.linux-amd64/amtool"
+          sudo mv /tmp/amtool /usr/local/bin/amtool
+
+      - name: Stage Slack template
+        run: |
+          sudo mkdir -p /etc/alertmanager/templates
+          sudo cp templates/slack.tmpl /etc/alertmanager/templates/
+
+      - name: Check Alertmanager config
+        run: amtool check-config config/alertmanager/alertmanager.yml
+
+  test-sample-app:
+    name: Build and smoke-test sample app
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t sample-api:ci sample-app/
+
+      - name: Start container
+        run: |
+          docker run -d --name sample-api-ci \
+            -p 8080:8080 \
+            -e OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 \
+            sample-api:ci
+
+      - name: Wait for /healthz
+        run: |
+          timeout 30 bash -c \
+            'until curl -sf http://localhost:8080/healthz; do sleep 2; done'
+
+      - name: Verify /work endpoint responds
+        run: curl -sf http://localhost:8080/work
+
+      - name: Tear down
+        if: always()
+        run: docker rm -f sample-api-ci
+
+  lint-sample-app:
+    name: Lint sample app (ruff)
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Lint
+        run: ruff check sample-app/
+
+  # ── Backport PR after hotfix merges to prod ──────────────────────────────
+  # Opens a PR from the hotfix branch into main so both long-lived branches
+  # stay in sync. A reviewer must still approve and merge the backport PR.
+  backport-to-dev:
+    name: Open backport PR to main
+    if: >
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.merged == true &&
+      startsWith(github.event.pull_request.head.ref, 'hotfix/')
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create backport PR to dev
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOTFIX_BRANCH: ${{ github.event.pull_request.head.ref }}
+          HOTFIX_PR_NUMBER: ${{ github.event.pull_request.number }}
+          HOTFIX_PR_TITLE: ${{ github.event.pull_request.title }}
+          HOTFIX_PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          gh pr create \
+            --base main \
+            --head "${HOTFIX_BRANCH}" \
+            --title "chore: backport \"${HOTFIX_PR_TITLE}\" to main" \
+            --body "Automatic backport of hotfix PR #${HOTFIX_PR_NUMBER}.
+
+Source: ${HOTFIX_PR_URL}
+
+> **Action required:** Review and merge this PR to keep \`main\` in sync with \`prod\`."
