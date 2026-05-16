@@ -4,11 +4,11 @@ on:
   push:
     branches-ignore:
       - main
-      - production
+      - prod
   pull_request:
     branches:
       - main
-      - production
+      - prod
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -85,3 +85,19 @@ jobs:
       - name: Tear down
         if: always()
         run: docker rm -f sample-api-ci
+
+  lint-sample-app:
+    name: Lint sample app (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Lint
+        run: ruff check sample-app/
