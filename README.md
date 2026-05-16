@@ -121,6 +121,28 @@ Includes:
 - CFR and MTTR alert thresholds
 - identified toil and automation implemented
 
+## GitHub Actions CI/CD
+
+### Workflows
+
+| Workflow | Trigger | Purpose |
+|---|---|---|
+| **CI** (`.github/workflows/ci.yml`) | Push to non-`main` branches; PRs to `main` | Validates Prometheus alert rules (`promtool`), Alertmanager config (`amtool`), builds sample-app Docker image and smoke-tests `/healthz` |
+| **CD** (`.github/workflows/cd.yml`) | Push to `main` | SSH-deploys the stack via Terraform, polls Grafana `/api/health` to confirm, then records LTC sub-interval metrics |
+
+The CD workflow uses a `production` GitHub environment — configure required reviewers there to add a manual approval gate before deployments.
+
+### Required GitHub Secrets
+
+Configure these under **Settings → Secrets and variables → Actions**:
+
+| Secret | Description |
+|---|---|
+| `DEPLOY_HOST` | IP or hostname of the deployment server |
+| `DEPLOY_USER` | SSH username on the deployment server |
+| `DEPLOY_SSH_KEY` | SSH private key (the matching public key must be in `authorized_keys` on the server) |
+| `DEPLOY_PATH` | Absolute path to the repository clone on the deployment server |
+
 ## Alerting System
 - All alerts are in version-controlled YAML (`config/prometheus/alerts.yml`).
 - Alertmanager routing/inhibition is defined in code (`config/alertmanager/alertmanager.yml`).
