@@ -1,0 +1,53 @@
+global:
+  resolve_timeout: 5m
+
+templates:
+  - /etc/alertmanager/templates/slack.tmpl
+
+route:
+  receiver: slack-default
+  group_by: [alertname, service, severity]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 2h
+  routes:
+    - matchers:
+        - severity="critical"
+      receiver: slack-critical
+      continue: true
+
+    - matchers:
+        - service="cicd"
+      receiver: slack-cicd
+
+inhibit_rules:
+  - source_matchers:
+      - alertname="HostDown"
+    target_matchers:
+      - alertname=~"HostHighCpuWarning|HostHighCpuCritical|HostMemoryWarning|HostMemoryCritical"
+    equal: [instance]
+
+receivers:
+  - name: slack-default
+    slack_configs:
+      - api_url: '${SLACK_WEBHOOK_URL}'
+        channel: '${ALERTS_SLACK_CHANNEL}'
+        send_resolved: true
+        title: '{{ template "slack.title" . }}'
+        text: '{{ template "slack.body" . }}'
+
+  - name: slack-critical
+    slack_configs:
+      - api_url: '${SLACK_WEBHOOK_URL}'
+        channel: '${ALERTS_SLACK_CHANNEL}'
+        send_resolved: true
+        title: '[CRITICAL] {{ template "slack.title" . }}'
+        text: '{{ template "slack.body" . }}'
+
+  - name: slack-cicd
+    slack_configs:
+      - api_url: '${SLACK_WEBHOOK_URL}'
+        channel: '${ALERTS_SLACK_CHANNEL}'
+        send_resolved: true
+        title: '[CI/CD] {{ template "slack.title" . }}'
+        text: '{{ template "slack.body" . }}'

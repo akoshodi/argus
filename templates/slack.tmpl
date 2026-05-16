@@ -1,0 +1,12 @@
+{{ define "slack.title" }}{{ .CommonLabels.alertname }} | {{ .CommonLabels.severity | toUpper }} | {{ .Status | toUpper }}{{ end }}
+
+{{ define "slack.body" }}
+*Alert:* {{ .CommonLabels.alertname }}
+*Severity:* {{ .CommonLabels.severity }}
+*Service:* {{ .CommonLabels.service }}
+*Status:* {{ .Status }}
+*Host:* {{ if .CommonLabels.instance }}{{ .CommonLabels.instance }}{{ else }}n/a{{ end }}
+*Current Value:* {{ range .Alerts }}{{ .Annotations.description }}{{ end }}
+*Grafana:* {{ .CommonAnnotations.dashboard }}
+*Runbook:* {{ .CommonLabels.runbook }}
+{{ end }}
