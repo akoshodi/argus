@@ -125,31 +125,72 @@ Includes:
 
 ### Branch Model
 
+Two long-lived branches; all other branches are ephemeral:
+
 ```
-feature/* ──PR──► main ──auto──► staging
-                    └──merge──► production ──approval──► production
+feature/* ──PR──► main ──auto──► staging env
+hotfix/*  ──PR──► prod ──approval──► production env
+               └──auto backport PR──► main
 ```
 
-| Branch | Purpose |
-|---|---|
-| `feature/*` (any non-`main`/`production` branch) | Development — CI runs on push and on PRs to `main` or `production` |
-| `main` | Integration — merging here triggers an automatic deploy to **staging** |
-| `production` | Release — merging here queues a deploy to **production** pending manual approval |
+| Branch | Role | Deploys to |
+|---|---|---|
+| `feature/*` | Development — CI runs on push and on PRs to `main` or `prod` | — |
+| `hotfix/*` | Urgent fixes — branched from `prod`; same CI gates as feature branches | — |
+| `main` | Integration — every merge triggers a staging deploy automatically | **Staging** |
+| `prod` | Release — every merge queues a production deploy pending manual approval | **Production** |
 
 ### Promotion Flow
 
-1. Open a PR from your feature branch to `main` → CI validates config and app.
+1. Branch from `main`, open a PR back to `main` → CI validates config, lints the app, and smoke-tests it.
 2. Merge to `main` → staging deploys automatically.
-3. Verify staging. When ready, merge `main` into `production`.
-4. The CD workflow queues a production deployment; a required reviewer (configured on the `production` GitHub environment) must approve before it runs.
+3. Validate on staging. When ready, open a PR from `main` to `prod`.
+4. Merge to `prod` → production deploy is queued; a required reviewer (configured on the `production` GitHub environment) must approve.
+5. On successful production deploy, the CD workflow creates an annotated git tag (`release/YYYY-MM-DD-<sha7>`) for rollback traceability.
+
+### Hotfix Flow
+
+1. `git checkout -b hotfix/<name> prod` — always branch from `prod`.
+2. Push and open a PR to `prod`. CI runs automatically.
+3. After approval, merge to `prod` → production deploy runs.
+4. The hotfix workflow automatically opens a backport PR from `hotfix/<name>` to `main`.
+5. Review and merge the backport PR to keep `main` in sync with `prod`.
+
+### Rollback
+
+Every production deploy is tagged `release/YYYY-MM-DD-<sha7>`. To roll back:
+
+```bash
+# Identify the last good tag
+git tag --sort=-creatordate | grep release/ | head -5
+
+# Revert on prod branch
+git revert <bad-commit-sha> && git push origin prod
+# or restore IaC to the tagged state on the server
+git checkout release/<good-tag> -- terraform/ && terraform -chdir=terraform apply -auto-approve
+```
 
 ### Workflows
 
 | Workflow | Trigger | Purpose |
 |---|---|---|
-| **CI** (`.github/workflows/ci.yml`) | Push to non-`main`/non-`production` branches; PRs to `main` or `production` | Validates Prometheus rules (`promtool`), Alertmanager config (`amtool`), builds sample-app and smoke-tests `/healthz` |
-| **CD — staging** (`.github/workflows/cd.yml`) | Push to `main` | SSH-deploys to staging, polls Grafana `/api/health`, records LTC metrics |
-| **CD — production** (`.github/workflows/cd.yml`) | Push to `production` + manual approval | SSH-deploys to production, polls Grafana `/api/health`, records LTC metrics |
+| **CI** (`.github/workflows/ci.yml`) | Push to non-`main`/non-`prod` branches; PRs to `main` or `prod` | `promtool` rule check, `amtool` config check, Docker build + `/healthz` smoke test, `ruff` lint |
+| **Hotfix** (`.github/workflows/hotfix.yml`) | Push to `hotfix/**`; PR merged to `prod` | Same CI gates on hotfix branches; opens automatic backport PR to `main` after merge |
+| **CD — staging** (`.github/workflows/cd.yml`) | Push to `dev` | SSH-deploys to staging, polls Grafana `/api/health`, records LTC metrics |
+| **CD — production** (`.github/workflows/cd.yml`) | Push to `prod` + manual approval | SSH-deploys to production, polls Grafana `/api/health`, records LTC metrics, pushes release tag |
+
+### Branch Protection Rules
+
+Configure these in **Settings → Branches** for both `main` and `prod`:
+
+| Rule | Setting |
+|---|---|
+| Require a pull request before merging | ✅ enabled — no direct commits |
+| Required approvals | 1 (or more for `prod`) |
+| Dismiss stale reviews on new push | ✅ enabled |
+| Require status checks to pass | CI workflow must pass before merge |
+| Do not allow bypassing the above | ✅ enabled — admins included |
+| Restrict who can push to matching branches | Only CI/CD service account for `prod` |
 
 ### Environment Setup (GitHub)
 
@@ -157,18 +198,18 @@ Create two environments under **Settings → Environments**:
 
 | Environment | Protection |
 |---|---|
-| `staging` | None — deploys automatically |
-| `production` | Add at least one required reviewer; optionally restrict to the `production` branch |
+| `staging` | None — deploys automatically on merge to `dev` |
+| `production` | Add at least one required reviewer; restrict to the `prod` branch |
 
 ### Required Secrets (per environment)
 
-Each environment holds its own copy of these four secrets, pointing to its own server. Configure them under **Settings → Environments → \<env\> → Secrets**:
+Configure under **Settings → Environments → \<env\> → Secrets**:
 
 | Secret | Description |
 |---|---|
-| `DEPLOY_HOST` | IP or hostname of the deployment server for this environment |
+| `DEPLOY_HOST` | IP or hostname of the deployment server |
 | `DEPLOY_USER` | SSH username on the deployment server |
-| `DEPLOY_SSH_KEY` | SSH private key (matching public key must be in `authorized_keys` on the server) |
+| `DEPLOY_SSH_KEY` | SSH private key (`authorized_keys` on server must hold the public key) |
 | `DEPLOY_PATH` | Absolute path to the repository clone on the deployment server |
 
 ## Alerting System
