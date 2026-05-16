@@ -1,0 +1,51 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+  journald:
+    directory: /var/log/journal
+    start_at: end
+
+processors:
+  memory_limiter:
+    check_interval: 2s
+    limit_mib: 512
+  batch:
+    timeout: 2s
+
+exporters:
+  loki:
+    endpoint: http://loki:3100/loki/api/v1/push
+    default_labels_enabled:
+      exporter: true
+      job: true
+    labels:
+      resource:
+        service.name: service_name
+        service.namespace: service_namespace
+
+  otlphttp/tempo:
+    endpoint: http://tempo:4318
+    tls:
+      insecure: true
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+service:
+  extensions: [health_check]
+  pipelines:
+    logs:
+      receivers: [otlp, journald]
+      processors: [memory_limiter, batch]
+      exporters: [loki]
+
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlphttp/tempo]
